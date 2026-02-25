@@ -2,5 +2,7 @@
 .virtual_documents/
 __pycache__/
 data/raw_pdfs/
-# downloaded PDFs
+# Generated data
+data/omega_pdfs.csv
 pdfs/
+
