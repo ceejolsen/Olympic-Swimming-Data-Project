@@ -4,63 +4,69 @@ import pymupdf
 import re
 import pandas as pd
 
-# 1. Matches Rank, optional Heat, Lane, Name, Reaction Time, and Final Time
 SWIMMER_ROW_RE = re.compile(
-    r'"(?P<rank>\d+)"\s*,\s*(?:"\d+"\s*,\s*)?"(?P<lane>\d+)"\s*,\s*"(?P<name>[^"]+)"\s*,.*?"(?P<rt>\d\.\d{2})"\s*,\s*"(?P<final>\d:\d{2}\.\d{2})"', 
-    re.DOTALL
+    r"(?P<rank>\d+)?\s+(?P<lane>\d+)\s+(?P<name>[A-Z][A-Z\s,]+)\s+(?P<noc>[A-Z]{3})\s+(?P<rt>0\.\d{2})?\s+(?P<final>\d:?\d{2}\.\d{2}|DNS|DSQ|DNF)?"
 )
 
-# Handles "50m 26.76"  and "26.39 50m" 
-SPLIT_RE = re.compile(
-    r'(?P<d1>50|100|150|200|250|300|350)m.*?(\d{1,2}[:.]\d{2})|(\d{1,2}[:.]\d{2}).*?(?P<d2>50|100|150|200|250|300|350)m'
-)
+SPLIT_RE = re.compile(r"(?P<dist>50|100|150|200|250|300|350)m\s+﴾\d+﴿\s+(?P<time>\d:?\d{2}\.\d{2}|\d{2}\.\d{2})")
 
 def process_single_link(link):
+    if not isinstance(link, str) or not link.startswith("http"):
+        return []
+        
     local_data = []
     try:
         with requests.Session() as s:
             response = s.get(link, impersonate="chrome110", timeout=15)
+            if response.status_code != 200: return []
+            content = response.content
             
-        with pymupdf.open(stream=response.content, filetype="pdf") as doc:
+        with pymupdf.open(stream=content, filetype="pdf") as doc:
             for page in doc:
-                # Use page_text directly from the provided extracted format
-                page_text = page.get_text("text")
+                text = page.get_text("text")
+                # Normalize the text: remove weird spaces, keep lines
+                lines = [l.strip() for l in text.split('\n') if l.strip()]
                 
-                # Find all swimmer rows on the page
-                swimmers = list(SWIMMER_ROW_RE.finditer(page_text))
+                current_entry = None
                 
-                for i, match in enumerate(swimmers):
-                    # Define context: from current swimmer start to next swimmer start
-                    start_idx = match.start()
-                    end_idx = swimmers[i+1].start() if i+1 < len(swimmers) else len(page_text)
-                    context = page_text[start_idx:end_idx]
+                for i, line in enumerate(lines):
+                    # 1. Identify a Swimmer: Usually All Caps, followed by a Club Code
+                    # Example: GEMMELL Andrew followed by DST-MA
+                    if line.isupper() and i + 1 < len(lines) and any(char.isdigit() for char in lines[i+1]) == False:
+                        # Save the previous one if it exists
+                        if current_entry and current_entry.get("50m"): 
+                            local_data.append(current_entry)
+                        
+                        current_entry = {
+                            "Name": line,
+                            "Club": lines[i+1] if i+1 < len(lines) else "",
+                            "Link": link
+                        }
+                        for m in range(50, 400, 50): current_entry[f"{m}m"] = None
+                        continue
                     
-                    # Extract metadata from the main row match
-                    data = match.groupdict()
-                    
-                    entry = {
-                        "Rank": data['rank'],
-                        "Name": data['name'].strip().replace('\n', ' '),
-                        "Lane": data['lane'],
-                        "Reaction Time": data['rt'],
-                        "Final Time": data['final']
-                    }
-                    
-                    # Initialize empty splits
-                    for d in ["50m", "100m", "150m", "200m", "250m", "300m", "350m"]:
-                        entry[d] = None
+                    if current_entry:
+                        # 2. Look for Rank/Lane/RT/Final (they appear near the name)
+                        if "R.T." in line and i + 1 < len(lines):
+                             current_entry["Reaction Time"] = lines[i+1]
+                        
+                        # 3. Look for Splits
+                        split_match = SPLIT_RE.search(line)
+                        if split_match:
+                            dist = f"{split_match.group('dist')}m"
+                            current_entry[dist] = split_match.group('time')
+                        
+                        # 4. Look for the Final Time (Usually a standalone time after the splits or near RT)
+                        # This catches the 3:53.05 style format
+                        if re.match(r"^\d:\d{2}\.\d{2}$", line) and not SPLIT_RE.search(line):
+                            if "Final" not in line: # Avoid matching the header "Final"
+                                current_entry["Final Time"] = line
 
-                    # Extract Splits from the context block
-                    for s_match in SPLIT_RE.finditer(context):
-                        # Determine which group captured the distance and time
-                        dist = f"{s_match.group('d1') or s_match.group('d2')}m"
-                        time_val = s_match.group(2) if s_match.group('d1') else s_match.group(3)
-                        entry[dist] = time_val
-                    
-                    local_data.append(entry)
+                if current_entry and current_entry.get("50m"):
+                    local_data.append(current_entry)
                     
     except Exception as e:
-        print(f"Error processing {link}: {e}")
+        print(f"Failed on {link}: {e}")
     return local_data
 
 def time_to_seconds(time_val) -> float:
@@ -82,8 +88,8 @@ def get_links_df(file: pd.DataFrame) -> list:
     """
     if not isinstance(file, pd.DataFrame):
         return None, None
-    mens_links = file['mens_400_free_pdf'].tolist()
-    womens_links = file['womens_400_free_pdf'].tolist()
+    mens_links = file['mens_400_free_pdf'].dropna().tolist()
+    womens_links = file['womens_400_free_pdf'].dropna().tolist()
     return mens_links, womens_links
 
 def scrape_omega(links: list, max_workers: int = 10) -> pd.DataFrame:
