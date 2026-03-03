@@ -1,8 +1,8 @@
-from curl_cffi import requests
-from concurrent.futures import ThreadPoolExecutor
+import os
 import pandas as pd
+from concurrent.futures import ProcessPoolExecutor, as_completed
+from tqdm import tqdm
 import single_pdf as spdf
-import pymupdf
 
 def time_to_seconds(time_val) -> float:
     if not time_val or pd.isna(time_val): return None
@@ -27,67 +27,44 @@ def get_links_df(file: pd.DataFrame) -> list:
     womens_links = file['womens_400_free_pdf'].dropna().tolist()
     return mens_links, womens_links
 
-def scrape_omega(links: list, max_workers: int = 10) -> pd.DataFrame:
+def scrape_omega(links, output_file="scraped_results.csv", max_workers=4):
+    """
+    Scrapes PDFs with a live progress bar and checkpointing to avoid redundant work.
+    """
     all_results = []
-    with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        results = executor.map(spdf.process_single_link, links)
-        for r_list in results:
-            all_results.extend(r_list)
-        
-    df = pd.DataFrame(all_results)
-    if df.empty:
-        return df
+    processed_links = set()
 
-    # Convert all split and time columns to seconds
-    time_cols = [c for c in df.columns if 'm' in c or "Final" in c]
-    for col in time_cols:
-        df[col] = df[col].apply(time_to_seconds)
-        
-    return df
+    # Load existing data to see what we've already done
+    if os.path.exists(output_file):
+        existing_df = pd.read_csv(output_file)
+        if not existing_df.empty:
+            processed_links = set(existing_df['Link'].unique())
+            all_results = existing_df.to_dict('records')
+            print(f"Resuming: {len(processed_links)} PDFs already processed.")
 
-
-import os
-from pathlib import Path
-
-def dump_pdf_text_to_files(df: pd.DataFrame, limit: int = 10):
-    """
-    Downloads PDFs and saves their raw text content to /debug_dumps/
-    to inspect the actual characters PyMuPDF is seeing.
-    """
-    # Create directory for the text files
-    output_dir = Path("debug_dumps")
-    output_dir.mkdir(exist_ok=True)
+    # Filter out links we have already finished
+    remaining_links = [l for l in links if l not in processed_links]
     
-    # Get links from your existing function
-    mens_links, womens_links = get_links_df(df) #
-    all_links = (mens_links + womens_links)[:limit] 
-    
-    print(f"Dumping text for {len(all_links)} PDFs into '{output_dir}/'...")
+    if not remaining_links:
+        print("All links already processed.")
+        return pd.DataFrame(all_results)
 
-    for i, link in enumerate(all_links):
-        try:
-            with requests.Session() as s:
-                response = s.get(link, impersonate="chrome110", timeout=15)
-                if response.status_code != 200: continue
-                content = response.content
-            
-            # Extract text using your current library
-            with pymupdf.open(stream=content, filetype="pdf") as doc:
-                full_text = ""
-                for page in doc:
-                    full_text += f"--- PAGE {page.number} ---\n"
-                    full_text += page.get_text("text") #
-            
-            # Save to file
-            filename = f"pdf_dump_{i}.txt"
-            with open(output_dir / filename, "w", encoding="utf-8") as f:
-                f.write(f"SOURCE LINK: {link}\n\n")
-                f.write(full_text)
-            
-            print(f"Saved: {filename}")
-            
-        except Exception as e:
-            print(f"Failed to dump {link}: {e}")
+    with ProcessPoolExecutor(max_workers=max_workers) as executor:
+        future_to_link = {executor.submit(spdf.process_single_link, link): link for link in remaining_links}
+        
+        # Live percentage bar via tqdm
+        for future in tqdm(as_completed(future_to_link), total=len(remaining_links), desc="Scraping"):
+            try:
+                result = future.result()
+                if result:
+                    all_results.extend(result)
+                    # Incremental save every 10 PDFs to protect data
+                    if len(all_results) % 10 == 0:
+                        pd.DataFrame(all_results).to_csv(output_file, index=False)
+            except Exception as e:
+                print(f"Error on {future_to_link[future]}: {e}")
 
-# Add this to your Project.ipynb to run it:
-# pdf.dump_pdf_text_to_files(df, limit=5)
+    # Final save and return
+    final_df = pd.DataFrame(all_results)
+    final_df.to_csv(output_file, index=False)
+    return final_df
