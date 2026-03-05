@@ -36,7 +36,10 @@ def scrape_omega(links, output_file="scraped_results.csv", max_workers=4):
 
     # Load existing data to see what we've already done
     if os.path.exists(output_file):
-        existing_df = pd.read_csv(output_file)
+        try:
+            existing_df = pd.read_csv(output_file)
+        except pd.errors.EmptyDataError:
+            existing_df = pd.DataFrame()
         if not existing_df.empty:
             processed_links = set(existing_df['Link'].unique())
             all_results = existing_df.to_dict('records')

@@ -253,7 +253,7 @@ def _parse_heat_section(heat_label: str, section_text: str) -> list:
 # Public API
 # ---------------------------------------------------------------------------
 
-def parse_pdf(source: str) -> pd.DataFrame:
+def process_single_link(source: str) -> pd.DataFrame:
     """
     Parse a 400m freestyle swimming results PDF into a pandas DataFrame.
 
