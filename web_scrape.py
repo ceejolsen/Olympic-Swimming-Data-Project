@@ -1,3 +1,32 @@
+"""
+web_scraper.py
+--------------
+Scrapes OmegaTiming competition pages to collect PDF result links.
+
+This module navigates the OmegaTiming results website and extracts
+PDF links for the men's and women's 400m freestyle events.
+
+Usage:
+    from web_scraper import scrape_links
+
+    df = scrape_links()
+
+Process:
+    1. Load the OmegaTiming results webpage
+    2. Filter competitions by year
+    3. Identify competitions containing swimming events
+    4. Extract PDF result links for the 400m freestyle
+    5. Return a structured dataset of competition metadata
+       and PDF URLs
+
+Output columns:
+    year
+    competition_name
+    mens_400_free_pdf
+    womens_400_free_pdf
+"""
+
+
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
@@ -36,11 +65,26 @@ class OmegaScraper:
     def __init__(self):
         options = webdriver.ChromeOptions()
         options.add_argument("--headless=new")
-        # Optimization: Don't load images to save bandwidth
-        options.add_experimental_option("prefs", {"profile.managed_default_content_settings.images": 2})
-        options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36")
+
+        # Return once DOMContentLoaded fires (don’t wait for all images/fonts/etc)
+        options.page_load_strategy = "eager"
+
+        # Block common heavy assets (images already blocked in your code)
+        options.add_experimental_option("prefs", {
+            "profile.managed_default_content_settings.images": 2,
+            "profile.managed_default_content_settings.stylesheets": 2,  # if layout breaks, set to 1
+            "profile.managed_default_content_settings.fonts": 2,
+            "profile.managed_default_content_settings.media": 2,
+        })
+
+        options.add_argument(
+            "user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"
+        )
+
         self.driver = webdriver.Chrome(options=options)
-        self.wait = WebDriverWait(self.driver, 15)
+
+        #  8s is fine 
+        self.wait = WebDriverWait(self.driver, 8)
 
     def switch_to_content(self):
         """Switches into the AppBody iframe where the data lives."""
@@ -52,25 +96,46 @@ class OmegaScraper:
 
     def select_year(self, target_year):
         target = str(target_year)
-        self.switch_to_content() # CRITICAL: Switch to frame first
-        
+        self.switch_to_content()
+    
         try:
+            # Snapshot something from the table BEFORE changing year
+            before_href = None
+            try:
+                first_link = self.driver.find_element(By.CSS_SELECTOR, ".results-page .block-table .row h3.detail a")
+                before_href = first_link.get_attribute("href")
+            except Exception:
+                pass
+    
             dd = self.wait.until(EC.element_to_be_clickable((By.CSS_SELECTOR, ".select-selected")))
             dd.click()
-            
+    
             opt_xpath = f"//div[contains(@class,'select-items')]//div[normalize-space(text())='{target}']"
             opt = self.wait.until(EC.element_to_be_clickable((By.XPATH, opt_xpath)))
             self.driver.execute_script("arguments[0].click();", opt)
-            
-            # Wait for the UI to confirm the selection
+    
+            # Confirm the dropdown label updated
             self.wait.until(lambda d: d.find_element(By.CSS_SELECTOR, ".select-selected").text.strip() == target)
-            
-            # Brief pause for the AJAX table refresh to trigger
-            time.sleep(2) 
+    
+            # Wait until the table actually refreshes (first link changes + includes /{year}/)
+            def table_refreshed(d):
+                try:
+                    a = d.find_element(By.CSS_SELECTOR, ".results-page .block-table .row h3.detail a")
+                    href = a.get_attribute("href") or ""
+                    if f"/{target_year}/" not in href:
+                        return False
+                    if before_href and href == before_href:
+                        return False
+                    return True
+                except Exception:
+                    return False
+    
+            self.wait.until(table_refreshed)
+
         except Exception as e:
             print(f"Error selecting year {target}: {e}")
         finally:
-            self.driver.switch_to.default_content() # Switch back to main content for the next action
+            self.driver.switch_to.default_content()
 
     def get_comp_links(self, year):
         self.switch_to_content()
@@ -97,13 +162,14 @@ class OmegaScraper:
         return links
 
     def get_pdfs(self, link):
-        """Scrapes the 400 Free PDFs from a competition page."""
         self.driver.get(link)
-        self.wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, ".block-table")))
-        
+    
+        # more specific: wait for at least 1 row
+        self.wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, ".page-wrapper .block-table .row")))
+    
         results = {"men": None, "women": None}
         event_rows = self.safe_find_rows(".page-wrapper .block-table .row")
-        
+    
         for row in event_rows:
             try:
                 text = row.find_element(By.CSS_SELECTOR, "p.round").text.upper()
@@ -111,10 +177,13 @@ class OmegaScraper:
                     links = row.find_elements(By.CSS_SELECTOR, "p.two a[href]")
                     if len(links) >= 2:
                         pdf_url = links[1].get_attribute("href")
-                        if "WOMEN" in text: results["women"] = pdf_url
-                        elif "MEN" in text: results["men"] = pdf_url
+                        if "WOMEN" in text:
+                            results["women"] = pdf_url
+                        elif "MEN" in text:
+                            results["men"] = pdf_url
             except NoSuchElementException:
                 continue
+    
         return results["men"], results["women"]
 
     def safe_find_rows(self, selector, retries=3):
@@ -132,10 +201,9 @@ def get_csv(start, end):
     ensure_csv() # Using your existing helper
     
     try:
+        scraper.driver.get(url)
         for year in range(start, end + 1):
-            scraper.driver.get(url)
             scraper.select_year(year)
-            
             competitions = scraper.get_comp_links(year)
             print(f"Year {year}: Found {len(competitions)} comps.")
 
