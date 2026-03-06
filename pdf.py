@@ -1,3 +1,32 @@
+"""
+pdf.py
+------
+Runs the OmegaTiming PDF scraping and parsing pipeline.
+
+This module coordinates the process of downloading and parsing
+400m freestyle result PDFs.
+
+Usage:
+    import pdf
+
+    df = pdf.scrape_omega(pdf_links)
+
+Input:
+    A list of OmegaTiming PDF URLs.
+
+Process:
+    1. Load an existing results CSV if present (resume support)
+    2. Use multiprocessing to process PDFs in parallel
+    3. Call the parser in single_pdf.py for each PDF
+    4. Collect swimmer results into a unified dataset
+    5. Periodically checkpoint results to disk
+
+Output:
+    pandas DataFrame with columns:
+        heat, rank, lane, last_name, first_name, reaction_time,
+        split_50m, split_100m, split_150m, split_200m,
+        split_250m, split_300m, split_350m, final_time, Link
+"""
 import os
 import pandas as pd
 from concurrent.futures import ProcessPoolExecutor, as_completed
@@ -28,46 +57,60 @@ def get_links_df(file: pd.DataFrame) -> list:
     return mens_links, womens_links
 
 def scrape_omega(links, output_file="scraped_results.csv", max_workers=4):
-    """
-    Scrapes PDFs with a live progress bar and checkpointing to avoid redundant work.
-    """
     all_results = []
     processed_links = set()
 
-    # Load existing data to see what we've already done
+    # Load existing data (resume)
     if os.path.exists(output_file):
         try:
             existing_df = pd.read_csv(output_file)
         except pd.errors.EmptyDataError:
             existing_df = pd.DataFrame()
-        if not existing_df.empty:
-            processed_links = set(existing_df['Link'].unique())
-            all_results = existing_df.to_dict('records')
-            print(f"Resuming: {len(processed_links)} PDFs already processed.")
 
-    # Filter out links we have already finished
+        if not existing_df.empty and "Link" in existing_df.columns:
+            processed_links = set(existing_df["Link"].dropna().astype(str).unique())
+            all_results = existing_df.to_dict("records")
+            print(f"Resuming: {len(processed_links)} PDFs already processed.")
+        elif not existing_df.empty:
+            print(f"Resume disabled: 'Link' column not found in {output_file}. Columns={list(existing_df.columns)}")
+            all_results = existing_df.to_dict("records")
+
     remaining_links = [l for l in links if l not in processed_links]
-    
     if not remaining_links:
         print("All links already processed.")
         return pd.DataFrame(all_results)
 
-    with ProcessPoolExecutor(max_workers=max_workers) as executor:
-        future_to_link = {executor.submit(spdf.process_single_link, link): link for link in remaining_links}
-        
-        # Live percentage bar via tqdm
-        for future in tqdm(as_completed(future_to_link), total=len(remaining_links), desc="Scraping"):
-            try:
-                result = future.result()
-                if result:
-                    all_results.extend(result)
-                    # Incremental save every 10 PDFs to protect data
-                    if len(all_results) % 10 == 0:
-                        pd.DataFrame(all_results).to_csv(output_file, index=False)
-            except Exception as e:
-                print(f"Error on {future_to_link[future]}: {e}")
+    completed_pdfs = 0
 
-    # Final save and return
+    with ProcessPoolExecutor(max_workers=max_workers) as executor:
+        future_to_link = {
+            executor.submit(spdf.process_single_link, link): link
+            for link in remaining_links
+        }
+
+        for future in tqdm(as_completed(future_to_link), total=len(remaining_links), desc="Scraping"):
+            link = future_to_link[future]
+            try:
+                df = future.result()  # returns DataFrame (possibly empty) 
+                if df is not None:
+                    print(link, "rows:", len(df))
+                if df is None or df.empty:
+                    continue
+
+                rows = df.to_dict("records")
+                for r in rows:
+                    r["Link"] = link
+
+                all_results.extend(rows)
+                completed_pdfs += 1
+
+                # Save every 10 PDFs successfully parsed
+                if completed_pdfs % 10 == 0:
+                    pd.DataFrame(all_results).to_csv(output_file, index=False)
+
+            except Exception as e:
+                print(f"Error on {link}: {e}")
+
     final_df = pd.DataFrame(all_results)
     final_df.to_csv(output_file, index=False)
     return final_df
