@@ -50,11 +50,11 @@ HEAT_HEADER = re.compile(
 #   "2 2 COCHRANE Ryan CAN 0.92 3:46.78 2.05"       — RT, time-behind
 #   "1 4 PARK Tae Hwan KOR 0.68 3:44.73"            — multi-word first name
 SWIMMER_LINE = re.compile(
-    r'^(\d+)\s+(\d+)\s+'       # group 1=rank, 2=lane
-    r'(.+?)\s+'                 # group 3=raw name+code (non-greedy)
-    r'(?:(0\.\d{2})\s+)?'      # group 4=reaction time (optional)
-    r'(\d:\d{2}\.\d{2})'       # group 5=final time  e.g. 3:46.00
-    r'(?:\s+[\d\.]+)?\s*$',    # optional trailing FINA pts or time-behind
+    r'^=?(\d+)\s+(\d+)\s+'          # rank (maybe "=3"), lane
+    r'(.+?)\s+'                     # last_name first_name (and sometimes club/NOC chunk)
+    r'(?:(0\.\d{2,3})\s+)?'         # optional reaction time
+    r'(\d:\d{2}\.\d{2})'            # final time
+    r'(?:\s+\+?\d+\.\d+)?\s*$',     # optional "Behind" like "+5.27" or "1.36"
     re.MULTILINE
 )
 
@@ -224,7 +224,7 @@ def _parse_heat_section(heat_label: str, section_text: str) -> list:
                     i = j   # advance outer loop past this splits line
                     break
                 if SWIMMER_LINE.match(next_line):
-                    break   # next swimmer reached — no splits found
+                    break   # next swimmer reached,  no splits found
                 j += 1
 
             rows.append({
