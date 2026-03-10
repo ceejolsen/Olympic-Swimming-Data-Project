@@ -1,21 +1,3 @@
-"""
-swim_parser.py
---------------
-Parses FINA/USA Swimming 400m Freestyle result PDFs into a pandas DataFrame.
-
-Usage:
-    from swim_parser import parse_pdf
-
-    df = parse_pdf("path/to/results.pdf")
-    # or from a URL:
-    df = parse_pdf("https://example.com/results.pdf")
-
-Output columns:
-    heat, rank, lane, last_name, first_name, reaction_time,
-    split_50m, split_100m, split_150m, split_200m,
-    split_250m, split_300m, split_350m, final_time
-"""
-
 import re
 import io
 import requests
@@ -23,38 +5,18 @@ import pdfplumber
 import pandas as pd
 from pathlib import Path
 
-
-# ---------------------------------------------------------------------------
-# Regex patterns
-# ---------------------------------------------------------------------------
-
-# Matches heat section headers.
-# Two forms exist across different PDF types:
-#   "Final A Event No. 16"  — lettered heat with "Event" on same line
-#   "Final B"               — lettered heat alone on its line (page-break style)
-#   "Final Event No. 12"    — single unnamed heat (World Cup style)
 HEAT_HEADER = re.compile(
-    r'^(Final\s+([ABC]))\s*(?:Event.*)?$'   # Final A/B/C (with or without Event)
-    r'|^(Final)\s+Event',                    # unnamed Final ... Event
+    r'^(Final\s+([ABC]))\s*(?:Event.*)?$'
+    r'|^(Final)\s+Event',                    
     re.IGNORECASE | re.MULTILINE
 )
 
-# Matches a swimmer header line.
-# Anchors on rank+lane at the start and M:SS.ss final time near the end.
-# Everything in between is the name+code blob, preceded by an optional RT.
-#
-# Examples handled:
-#   "1 5 ZHANG Zhongchao CHN 3:46.00 834"          — no RT, FINA pts
-#   "1 8 DOKI Kenichi JPN 0.73 3:47.20 821"         — RT, FINA pts
-#   "1 4 CALDWELL Nicholas SYS-FL 0.71 3:52.88"     — RT, club code, no trailing
-#   "2 2 COCHRANE Ryan CAN 0.92 3:46.78 2.05"       — RT, time-behind
-#   "1 4 PARK Tae Hwan KOR 0.68 3:44.73"            — multi-word first name
 SWIMMER_LINE = re.compile(
-    r'^=?(\d+)\s+(\d+)\s+'          # rank (maybe "=3"), lane
-    r'(.+?)\s+'                     # last_name first_name (and sometimes club/NOC chunk)
-    r'(?:(0\.\d{2,3})\s+)?'         # optional reaction time
-    r'(\d:\d{2}\.\d{2})'            # final time
-    r'(?:\s+\+?\d+\.\d+)?\s*$',     # optional "Behind" like "+5.27" or "1.36"
+    r'^(\d+)\s+(\d+)\s+'       
+    r'(.+?)\s+'                
+    r'(?:(0\.\d{2})\s+)?'    
+    r'(\d:\d{2}\.\d{2})'     
+    r'(?:\s+[\d\.]+)?\s*$',
     re.MULTILINE
 )
 
@@ -62,10 +24,6 @@ SWIMMER_LINE = re.compile(
 #   "CHN", "JPN", "SYS-FL", "CW-MI", "FCSTGU", "TWSTGU", "LAC-MI"
 CODE_SUFFIX = re.compile(r'\s+[A-Z]{2,8}(?:-[A-Z]{2,3})?\s*$')
 
-# Matches cumulative-split entries within a split line, e.g.:
-#   "50m ﴾1﴿ 26.22 100m ﴾1﴿ 54.52 150m ﴾1﴿ 1:23.39 ..."
-# Position markers use Arabic presentation parentheses (U+FD3E / U+FD3F).
-# Standard and fullwidth parentheses are also accepted for robustness.
 SPLIT_ENTRY = re.compile(
     r'(\d{2,3})m\s*'
     r'[\u0028\uFD3E\uff08(]\d+[\u0029\uFD3F\uff09)]\s*'
@@ -80,7 +38,7 @@ _NOISE_RES = [
     r'^SWM\d',
     r'^Record\s+Splits',
     r'^(?:WR|WC|CR|AR|US)\s+',
-    r'^\d+:\d{2}\.\d{2}\s+\d+:\d{2}',   # WR split continuation lines
+    r'^\d+:\d{2}\.\d{2}\s+\d+:\d{2}', 
     r'^(?:Rank|NOC|Code|Points|Behind)',
     r'^Results',
     r'^R.sultats',
@@ -88,19 +46,10 @@ _NOISE_RES = [
     r'^Page\s+\d',
     r'^Report\s+Created',
     r'^FINA/',
-    r'^RIO DE JANEIRO',
     r'^Event\s+\d',
     r'^Final\s*[ABC]?\s*(?:Event|$)',
-    r'^(?:Club|NOC)\s+(?:Time|FINA)',
-    r'^(?:August|Aug\.)',
-    r'^\d{4}\s+(?:Pan|FINA|Speedo|Conoco)',
 ]
 NOISE_PATTERNS = [re.compile(p, re.IGNORECASE) for p in _NOISE_RES]
-
-
-# ---------------------------------------------------------------------------
-# Internal helpers
-# ---------------------------------------------------------------------------
 
 def _load_pdf_bytes(source: str) -> bytes:
     """Load PDF bytes from a local file path or an HTTP/HTTPS URL."""
@@ -115,7 +64,7 @@ def _extract_full_text(pdf_bytes: bytes) -> str:
     """
     Extract text from every PDF page and join with newlines.
     Soft-hyphens (U+00AD) are normalised to regular hyphens so that
-    hyphenated club codes (SYS-FL) and surnames (FRASER-HOLMES) are
+    hyphenated club codes and names are
     handled consistently by the same regex.
     """
     pages = []
@@ -128,28 +77,34 @@ def _extract_full_text(pdf_bytes: bytes) -> str:
 
 
 def _is_noise(line: str) -> bool:
-    """Return True if a line should be skipped during swimmer parsing."""
+    """Returns if a line should be skipped during swimmer parsing, if it matches the noise rege."""
     stripped = line.strip()
     if not stripped:
         return True
     return any(p.match(stripped) for p in NOISE_PATTERNS)
 
 
-def _parse_splits(line: str) -> dict:
+def parse_splits(line: str) -> dict:
     """
     Extract cumulative split times from a splits line.
     Returns a dict like {'50': '26.22', '100': '54.52', ...}.
+
+    Keyword arguments:
+        line: the line with splits
+    Return arguments:
+        dict: a dictionary with splits in cumulative time
     """
     return {m.group(1): m.group(2) for m in SPLIT_ENTRY.finditer(line)}
 
 
-def _split_name(raw: str) -> tuple:
+def split_name(raw: str) -> tuple:
     """
-    Split a 'LAST Firstname' string into (last_name, first_name).
+    Helper function to split a 'LAST Firstname' string into (last_name, first_name).
 
-    Last name  = all leading ALL-CAPS tokens (handles hyphenated surnames like
-                 FRASER-HOLMES and multi-word surnames like ABDEL KHALIK).
-    First name = remaining mixed-case tokens.
+    Return argments:
+    Tuple:
+        (Last name, 
+        First name)
     """
     tokens = raw.split()
     last_parts, first_parts = [], []
@@ -161,9 +116,9 @@ def _split_name(raw: str) -> tuple:
     return " ".join(last_parts) or raw, " ".join(first_parts)
 
 
-def _split_into_heat_sections(text: str) -> list:
+def split_into_heat_sections(text: str) -> list:
     """
-    Locate each heat header and return a list of (heat_label, section_text).
+    Helper function to locate each heat header and return a list of (heat_label, section_text).
 
     Handles:
       - "Final A/B/C Event No. ..." (header + Event on same line)
@@ -190,8 +145,8 @@ def _split_into_heat_sections(text: str) -> list:
     return sections
 
 
-def _parse_heat_section(heat_label: str, section_text: str) -> list:
-    """Parse one heat section and return a list of swimmer dicts."""
+def parse_heat_section(heat_label: str, section_text: str) -> list:
+    """Helper function to parse one heat section and return a list of swimmer dicts."""
     lines = section_text.splitlines()
     rows = []
     i = 0
@@ -209,7 +164,7 @@ def _parse_heat_section(heat_label: str, section_text: str) -> list:
 
             # Strip trailing NOC/club code, then split into last / first name
             name_clean = CODE_SUFFIX.sub("", raw_middle).strip()
-            last_name, first_name = _split_name(name_clean)
+            last_name, first_name = split_name(name_clean)
 
             # Look ahead for the cumulative splits line
             splits = {}
@@ -220,13 +175,12 @@ def _parse_heat_section(heat_label: str, section_text: str) -> list:
                     j += 1
                     continue
                 if SPLIT_ENTRY.search(next_line):
-                    splits = _parse_splits(next_line)
+                    splits = parse_splits(next_line)
                     i = j   # advance outer loop past this splits line
                     break
                 if SWIMMER_LINE.match(next_line):
-                    break   # next swimmer reached,  no splits found
+                    break   # next swimmer reached — no splits found
                 j += 1
-
             rows.append({
                 "heat":          heat_label,
                 "rank":          rank,
@@ -245,25 +199,32 @@ def _parse_heat_section(heat_label: str, section_text: str) -> list:
             })
 
         i += 1
-
     return rows
 
-
-# ---------------------------------------------------------------------------
-# Public API
-# ---------------------------------------------------------------------------
-
-def process_single_link(source: str) -> pd.DataFrame:
+def process_single_link(link: str) -> list:
     """
-    Parse a 400m freestyle swimming results PDF into a pandas DataFrame.
+    Calls parse_pdf() on a URL and returns a list of dicts with 'Link' attached.
+    Returns an empty list on failure so the caller can skip gracefully.
+    """
+    try:
+        df = parse_pdf(link)
+        if df.empty:
+            return []
+        df.insert(0, "Link", link)
+        return df.to_dict("records")
+    except Exception as e:
+        print(f"Failed to parse {link}: {e}")
+        return []
 
-    Parameters
-    ----------
+
+def parse_pdf(source: str) -> pd.DataFrame:
+    """
+    Turn a 400m freestyle swimming results PDF into a pandas DataFrame.
+
+    Keyword arguments
     source : str
-        A local file path or an HTTP/HTTPS URL pointing to the PDF.
+        a url pointing to the pdf
 
-    Returns
-    -------
     pd.DataFrame
         One row per swimmer with columns:
             heat, rank, lane, last_name, first_name, reaction_time,
@@ -271,16 +232,17 @@ def process_single_link(source: str) -> pd.DataFrame:
             split_250m, split_300m, split_350m, final_time
 
         reaction_time is float (NaN when not recorded in the PDF).
-        All split and final_time values are strings (M:SS.ss or SS.ss format).
+        All split and final_time values are strings (M:SS.ss or SS.ss format). FIX THIS
         heat is one of: "Final", "Final A", "Final B", "Final C".
+        NaN if not found
     """
     pdf_bytes = _load_pdf_bytes(source)
     full_text = _extract_full_text(pdf_bytes)
-    sections  = _split_into_heat_sections(full_text)
+    sections  = split_into_heat_sections(full_text)
 
     all_rows = []
     for heat_label, section_text in sections:
-        all_rows.extend(_parse_heat_section(heat_label, section_text))
+        all_rows.extend(parse_heat_section(heat_label, section_text))
 
     _COLUMNS = [
         "heat", "rank", "lane", "last_name", "first_name",
