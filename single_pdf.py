@@ -12,11 +12,11 @@ HEAT_HEADER = re.compile(
 )
 
 SWIMMER_LINE = re.compile(
-    r'^(\d+)\s+(\d+)\s+'       
-    r'(.+?)\s+'                
-    r'(?:(0\.\d{2})\s+)?'    
-    r'(\d:\d{2}\.\d{2})'     
-    r'(?:\s+[\d\.]+)?\s*$',
+    r'^([=T]?\d+[=T]?)\s+(\d+)\s+'        # rank lane
+    r'(.+?)\s+'                          # name blob
+    r'(?:(0\.\d{2})\s+)?'                # optional reaction time
+    r'(\d+:\d{2}\.\d{2}|\d{2,3}\.\d{2})' # final time
+    r'(?:\s+.*)?$',                      # allow any trailing junk/columns
     re.MULTILINE
 )
 
@@ -26,7 +26,7 @@ CODE_SUFFIX = re.compile(r'\s+[A-Z]{2,8}(?:-[A-Z]{2,3})?\s*$')
 
 SPLIT_ENTRY = re.compile(
     r'(\d{2,3})m\s*'
-    r'[\u0028\uFD3E\uff08(]\d+[\u0029\uFD3F\uff09)]\s*'
+    r'(?:[\(\uFD3E\uff08]\d+[\)\uFD3F\uff09]\s*)?'
     r'(\d+:\d{2}\.\d{2}|\d{2,3}\.\d{2})'
 )
 
@@ -156,7 +156,12 @@ def parse_heat_section(heat_label: str, section_text: str) -> list:
         m = SWIMMER_LINE.match(line)
 
         if m:
-            rank       = int(m.group(1))
+            raw_rank = m.group(1)
+            rank_digits = re.sub(r"\D", "", raw_rank)
+            if not rank_digits:
+                i += 1
+                continue
+            rank = int(rank_digits)
             lane       = int(m.group(2))
             raw_middle = m.group(3).strip()
             reaction   = float(m.group(4)) if m.group(4) else None

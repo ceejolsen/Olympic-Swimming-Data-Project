@@ -91,20 +91,20 @@ def scrape_omega(links, output_file="scraped_results.csv", max_workers=4):
         for future in tqdm(as_completed(future_to_link), total=len(remaining_links), desc="Scraping"):
             link = future_to_link[future]
             try:
-                df = future.result()  # returns DataFrame (possibly empty) 
-                if df is not None:
-                    print(link, "rows:", len(df))
-                if df is None or df.empty:
+                rows = future.result()   # returns list of dicts
+
+                if rows is not None:
+                    print(link, "rows:", len(rows))
+
+                if not rows:
                     continue
 
-                rows = df.to_dict("records")
                 for r in rows:
                     r["Link"] = link
 
                 all_results.extend(rows)
                 completed_pdfs += 1
 
-                # Save every 10 PDFs successfully parsed
                 if completed_pdfs % 10 == 0:
                     pd.DataFrame(all_results).to_csv(output_file, index=False)
 
