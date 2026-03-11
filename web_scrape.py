@@ -26,7 +26,6 @@ Output columns:
     womens_400_free_pdf
 """
 
-
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
@@ -62,6 +61,7 @@ def append_row(year, competition, mens_pdf, womens_pdf):
         w.writerow([year, competition, mens_pdf or "", womens_pdf or ""])
 
 class OmegaScraper:
+    "the class that is initialized for the Webscraper"
     def __init__(self):
         options = webdriver.ChromeOptions()
         options.add_argument("--headless=new")
@@ -202,7 +202,7 @@ def get_csv(start, end):
     
     try:
         scraper.driver.get(url)
-        for year in range(start, end + 1):
+        for year in range(start, end + 1): #iterate through years, inclusive
             scraper.select_year(year)
             competitions = scraper.get_comp_links(year)
             print(f"Year {year}: Found {len(competitions)} comps.")
@@ -216,4 +216,4 @@ def get_csv(start, end):
                 except Exception as e:
                     print(f"  [ERROR] {name}: {e}")
     finally:
-        scraper.driver.quit()
+        scraper.driver.quit() #closes the process out at the end
