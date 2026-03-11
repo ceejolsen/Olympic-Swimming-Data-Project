@@ -192,11 +192,13 @@ class OmegaScraper:
             try:
                 return self.driver.find_elements(By.CSS_SELECTOR, selector)
             except StaleElementReferenceException:
+                #adds a cap on number of retries, just in case
                 if i == retries - 1: raise
                 time.sleep(0.5)
 
 # ---------------------------------------------------- RUN ----------------------------------------------------
 def get_csv(start, end):
+    #initializes omegascraper class
     scraper = OmegaScraper()
     ensure_csv() # Using your existing helper
     
