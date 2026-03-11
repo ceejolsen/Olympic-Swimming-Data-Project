@@ -49,10 +49,18 @@ _NOISE_RES = [
     r'^Event\s+\d',
     r'^Final\s*[ABC]?\s*(?:Event|$)',
 ]
+
+#list comprehension for how they appear
 NOISE_PATTERNS = [re.compile(p, re.IGNORECASE) for p in _NOISE_RES]
 
 def _load_pdf_bytes(source: str) -> bytes:
-    """Load PDF bytes from a local file path or an HTTP/HTTPS URL."""
+    """Load PDF bytes from a local file path or an HTTP/HTTPS URL.
+    Arguments:
+        Parameters:
+            source: link to the pdf
+        Return arguments: 
+            the path in byte form (I think?)
+    """
     if source.startswith("http://") or source.startswith("https://"):
         response = requests.get(source, timeout=30)
         response.raise_for_status()
@@ -66,6 +74,12 @@ def _extract_full_text(pdf_bytes: bytes) -> str:
     Soft-hyphens (U+00AD) are normalised to regular hyphens so that
     hyphenated club codes and names are
     handled consistently by the same regex.
+
+    Keyword Arguments:
+        Parameters:
+            pdf_bytes: the page from every pdf
+        Return arguments:
+            the text after being filtered 
     """
     pages = []
     with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf:
@@ -77,7 +91,13 @@ def _extract_full_text(pdf_bytes: bytes) -> str:
 
 
 def _is_noise(line: str) -> bool:
-    """Returns if a line should be skipped during swimmer parsing, if it matches the noise rege."""
+    """Returns if a line should be skipped during swimmer parsing, if it matches the noise rege.
+    Keyword Arguments:
+        Parameters:
+            Line: the line of text in str form
+        Return arguments:
+            A bool saying to skip a line or not
+    """
     stripped = line.strip()
     if not stripped:
         return True
@@ -90,9 +110,10 @@ def parse_splits(line: str) -> dict:
     Returns a dict like {'50': '26.22', '100': '54.52', ...}.
 
     Keyword arguments:
-        line: the line with splits
-    Return arguments:
-        dict: a dictionary with splits in cumulative time
+        Parameters:
+            line: the line with splits
+        Return arguments:
+            dict: a dictionary with splits in cumulative time
     """
     return {m.group(1): m.group(2) for m in SPLIT_ENTRY.finditer(line)}
 
@@ -124,6 +145,9 @@ def split_into_heat_sections(text: str) -> list:
       - "Final A/B/C Event No. ..." (header + Event on same line)
       - "Final B" / "Final C" alone (page-break style, no Event keyword)
       - "Final Event No. ..." (single unnamed heat, World Cup style)
+
+    Keyword argument:
+        Paremeters:
     """
     matches = list(HEAT_HEADER.finditer(text))
     if not matches:
@@ -146,7 +170,15 @@ def split_into_heat_sections(text: str) -> list:
 
 
 def parse_heat_section(heat_label: str, section_text: str) -> list:
-    """Helper function to parse one heat section and return a list of swimmer dicts."""
+    """Helper function to parse one heat section and return a list of swimmer dicts.
+    
+    Parameters:
+        
+
+    Return arguments:
+        Swimmer dictionaries
+    """
+
     lines = section_text.splitlines()
     rows = []
     i = 0
@@ -202,7 +234,6 @@ def parse_heat_section(heat_label: str, section_text: str) -> list:
                 "split_350m":    splits.get("350"),
                 "final_time":    final_time,
             })
-
         i += 1
     return rows
 
@@ -210,6 +241,11 @@ def process_single_link(link: str) -> list:
     """
     Calls parse_pdf() on a URL and returns a list of dicts with 'Link' attached.
     Returns an empty list on failure so the caller can skip gracefully.
+
+    Parameters:
+
+    Return arguments:
+    
     """
     try:
         df = parse_pdf(link)
