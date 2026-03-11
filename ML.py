@@ -3,32 +3,47 @@ import numpy as np
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import mean_absolute_error
-from pdf import time_to_seconds
+from pdf import time_to_seconds #was originally coded in the other file, ended up actually using it here
 
 
-FEATURE_SPLITS  = ["split_50m", "split_100m", "split_150m", "split_200m", "split_250m"]
-INTERVAL_COLS   = [f"interval_{c}" for c in FEATURE_SPLITS[1:]]
-FEATURE_COLS    = FEATURE_SPLITS + INTERVAL_COLS + ["reaction_time"]
-TIME_COLS       = ["split_50m", "split_100m", "split_150m", "split_200m",
+FEATURE_SPLITS = ["split_50m", "split_100m", "split_150m", "split_200m", "split_250m"]
+INTERVAL_COLS = [f"interval_{c}" for c in FEATURE_SPLITS[1:]]
+FEATURE_COLS = FEATURE_SPLITS + INTERVAL_COLS + ["reaction_time"]
+TIME_COLS  = ["split_50m", "split_100m", "split_150m", "split_200m",
                    "split_250m", "split_300m", "split_350m", "final_time"]
 
 
-def train_model(men_csv: str, women_csv: str) -> tuple[RandomForestRegressor, float, pd.Series]:
+def train_model(men_input, women_input) -> tuple[RandomForestRegressor, float, pd.Series]:
     """
     Load scraped swim results, engineer features, and train a
-    RandomForestRegressor to predict final_time from the first 250m splits.
-
+    RandomForestRegressor to predict final_time from the 250m splits.
     Parameters
-    men_csv: path to the men's scraped results CSV
-    women_csv: path to the women's scraped results CSV
-
+        men_csv: path to the men's scraped results CSV
+        women_csv: path to the women's scraped results CSV
+    
     Return arguments
     tuple:
         (model: fitted RandomForestRegressor
         mae: mean absolute error on the held-out test set (seconds)
         importances  : pd.Series of feature importances, sorted descending)
     """
-    df = pd.concat([pd.read_csv(men_csv), pd.read_csv(women_csv)], ignore_index=True)
+    def normalize_input(data_input):
+        if isinstance(data_input, pd.DataFrame):
+            # Convert DataFrame to a CSV-formatted buffer
+            buf = io.StringIO()
+            data_input.to_csv(buf, index=False)
+            buf.seek(0)
+            return buf
+        return data_input
+
+    men_processed = normalize_input(men_input)
+    women_processed = normalize_input(women_input)
+
+    # Load and concatenate
+    df = pd.concat([
+        pd.read_csv(men_processed), 
+        pd.read_csv(women_processed)
+    ], ignore_index=True)
 
     # ── 2. Convert time strings → float seconds ──────────────────────────────
     for col in TIME_COLS:
