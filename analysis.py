@@ -80,3 +80,62 @@ def plot_residual_distribution(df_results):
 
     plt.tight_layout()
     plt.show()
+
+
+
+def plot_feature_importance(importances):
+    """Plot feature importance scores from the trained model."""
+    if not hasattr(importances, "sort_values"):
+        raise ValueError("importances should be a pandas Series.")
+
+    importances = importances.sort_values(ascending=True)
+
+    fig, ax = plt.subplots(figsize=(8,4))
+    colors = plt.cm.viridis(importances.values)
+    ax.barh(importances.index, importances.values, color=colors)
+    for i, v in enumerate(importances.values):
+        ax.text(v + 0.002, i, f"{v:.3f}", va="center")
+    ax.set_xlabel("Importance")
+    ax.set_ylabel("Feature")
+    ax.set_title("Feature importance for predicting 400m freestyle final time")
+
+    
+    plt.tight_layout()
+    plt.show()
+
+
+def plot_split_correlations(df_prepared):
+    """Plot correlation matrix for split features and final time."""
+
+    cols = [
+        "reaction_time",
+        "split_50m",
+        "split_100m",
+        "split_150m",
+        "split_200m",
+        "split_250m",
+        "final_time"
+    ]
+
+    available_cols = [c for c in cols if c in df_prepared.columns]
+    if len(available_cols) < 2:
+        raise ValueError("Not enough columns available to compute correlations.")
+
+    corr = df_prepared[available_cols].corr(numeric_only=True)
+
+    fig, ax = plt.subplots(figsize=(8, 7))
+    im = ax.imshow(corr, cmap="coolwarm", vmin=-1, vmax=1)
+    for i in range(len(available_cols)):
+        for j in range(len(available_cols)):
+            ax.text(j, i, f"{corr.iloc[i, j]:.2f}",
+                    ha="center", va="center", color="black", fontsize=8)
+    ax.set_xticks(range(len(available_cols)))
+    ax.set_xticklabels(available_cols, rotation=45, ha="right")
+    ax.set_yticks(range(len(available_cols)))
+    ax.set_yticklabels(available_cols)
+
+    ax.set_title("Correlation matrix of race features")
+    fig.colorbar(im, ax=ax)
+
+    plt.tight_layout()
+    plt.show()
