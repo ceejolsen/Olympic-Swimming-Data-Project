@@ -79,7 +79,7 @@ def get_links_df(file: pd.DataFrame) -> list:
     womens_links = file['womens_400_free_pdf'].dropna().tolist()
     return mens_links, womens_links
 
-def scrape_omega(links, output_file="scraped_results.csv", max_workers=4):
+def scrape_omega(links, output_file="data/scraped_results.csv", max_workers=4):
     """
     Parse a list of OmegaTiming PDF links into a unified race results dataframe.
 
