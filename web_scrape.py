@@ -42,7 +42,7 @@ url = f"{BASE_URL}/sports-timing-live-results"
 
 #path to directory so that it stores the csv in data dirctory 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-PROJECT_ROOT = os.path.abspath(os.path.join(SCRIPT_DIR, ".."))
+PROJECT_ROOT = SCRIPT_DIR
 
 DATA_DIR = os.path.join(PROJECT_ROOT, "data")
 os.makedirs(DATA_DIR, exist_ok=True)
@@ -50,10 +50,9 @@ os.makedirs(DATA_DIR, exist_ok=True)
 OUT_CSV = os.path.join(DATA_DIR, "omega_pdfs.csv")
 
 def ensure_csv():
-    if not os.path.exists(OUT_CSV) or os.path.getsize(OUT_CSV) == 0:
-        with open(OUT_CSV, "w", newline="", encoding="utf-8") as f:
-            w = csv.writer(f)
-            w.writerow(["year", "competition", "mens_400_free_pdf", "womens_400_free_pdf"])
+    with open(OUT_CSV, "w", newline="", encoding="utf-8") as f:
+        w = csv.writer(f)
+        w.writerow(["year", "competition", "mens_400_free_pdf", "womens_400_free_pdf"])
 
 def append_row(year, competition, mens_pdf, womens_pdf):
     with open(OUT_CSV, "a", newline="", encoding="utf-8") as f:
