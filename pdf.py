@@ -34,6 +34,19 @@ from tqdm import tqdm
 import single_pdf as spdf
 
 def time_to_seconds(time_val) -> float:
+    """
+    Convert a race time value into total seconds.
+
+    Supports both:
+    - mm:ss.ss format (example: 3:46.88)
+    - regular seconds format (example: 26.39)
+
+    Arguments:
+        time_val: A string, number, or pandas value representing time.
+
+    Returns:
+        float: Time in seconds rounded to 2 decimals, or None if invalid.
+    """
     if not time_val or pd.isna(time_val): return None
     try:
         if ":" in str(time_val):
@@ -44,11 +57,21 @@ def time_to_seconds(time_val) -> float:
 
 def get_links_df(file: pd.DataFrame) -> list:
     """
-    Extracts men's and women's PDF links from the dataframe.
-    
+    Extract men's and women's 400m freestyle PDF links from a dataframe.
+
+    Expected input columns:
+    - mens_400_free_pdf
+    - womens_400_free_pdf
+
+    Argument:
+        file (pd.DataFrame): DataFrame containing OmegaTiming PDF link columns.
+
     Returns:
-        tuple: (mens_links, womens_links)
-        which are the respective sexes link of events
+        tuple[list, list]:
+            - mens_links: list of men's PDF URLs
+            - womens_links: list of women's PDF URLs
+
+        If the input is not a DataFrame, returns (None, None).
     """
     if not isinstance(file, pd.DataFrame):
         return None, None
@@ -57,10 +80,29 @@ def get_links_df(file: pd.DataFrame) -> list:
     return mens_links, womens_links
 
 def scrape_omega(links, output_file="scraped_results.csv", max_workers=4):
+    """
+    Parse a list of OmegaTiming PDF links into a unified race results dataframe.
+
+    This function will complete this behavior:
+    if an output CSV already exists and contains a 'Link' column, links that
+    were already processed will be skipped.
+
+    Arguments:
+        links (list[str]): List of OmegaTiming PDF URLs to parse.
+        output_file (str): CSV file used for checkpointing and final output.
+        max_workers (int): Number of worker processes for multiprocessing.
+
+    Returns:
+        pd.DataFrame: Combined parsed results from all processed PDFs.
+    """
+    
     all_results = []
     processed_links = set()
 
-    # Load existing data (resume)
+
+    # If a previous output file exists, 
+    #load it so we can skip links we already processed in eariler runs.
+    
     if os.path.exists(output_file):
         try:
             existing_df = pd.read_csv(output_file)
@@ -82,6 +124,9 @@ def scrape_omega(links, output_file="scraped_results.csv", max_workers=4):
 
     completed_pdfs = 0
 
+    #Process PDFs in parallel using multiple worker processes.
+    #Each worker calls single_pdf.process_single_link(link)
+
     with ProcessPoolExecutor(max_workers=max_workers) as executor:
         future_to_link = {
             executor.submit(spdf.process_single_link, link): link
@@ -91,26 +136,32 @@ def scrape_omega(links, output_file="scraped_results.csv", max_workers=4):
         for future in tqdm(as_completed(future_to_link), total=len(remaining_links), desc="Scraping"):
             link = future_to_link[future]
             try:
-                rows = future.result()   # returns list of dicts
+                #each completed future returns a list of parsed swimmer rows
+                rows = future.result()   
 
                 if rows is not None:
                     print(link, "rows:", len(rows))
 
+                #skip pdfs that produce no rows
                 if not rows:
                     continue
 
+                #tag each parsed row with its source pdf link
                 for r in rows:
                     r["Link"] = link
 
+                #add parsed rows to the global result list
                 all_results.extend(rows)
                 completed_pdfs += 1
 
+                #save a checkpoint every 10 succesfully processed pdfs
                 if completed_pdfs % 10 == 0:
                     pd.DataFrame(all_results).to_csv(output_file, index=False)
-
+            
             except Exception as e:
                 print(f"Error on {link}: {e}")
 
+    #final save after all the links are processed
     final_df = pd.DataFrame(all_results)
     final_df.to_csv(output_file, index=False)
     return final_df
