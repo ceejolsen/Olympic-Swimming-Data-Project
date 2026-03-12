@@ -30,6 +30,46 @@ def test_parser(link):
     else:
         print(df.head())
         print(f"\nRows parsed: {len(df)}")
+        
+    return df
+
+def test_multiple_pdfs(links):
+    """Run parser on multiple PDFs for quick testing."""
+    for link in links:
+        print("\nTesting:", link)
+
+        try:
+            df = spdf.process_single_link(link)
+            print("Rows:", len(df))
+            print(df.head(2))
+        except Exception as e:
+            print("Error:", e)
+            
+        
+
+def inspect_lines(link, n=80):
+    """Print extracted lines for regex debugging."""
+    b = spdf._load_pdf_bytes(link)
+    text = spdf._extract_full_text(b)
+
+    lines = text.split("\n")
+
+    for i, line in enumerate(lines[:n]):
+    print(i, line)
+
+
+def test_swimmer_regex(link, pattern):
+    """Test swimmer regex pattern against extracted lines."""
+    import re
+
+    b = spdf._load_pdf_bytes(link)
+    text = spdf._extract_full_text(b)
+
+    for i, line in enumerate(text.split("\n")):
+        if re.match(pattern, line):
+            print("MATCH:", i, line)
+
+
 
 
 if __name__ == "__main__":
