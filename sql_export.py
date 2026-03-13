@@ -197,10 +197,17 @@ def run_sample_queries(db_path=DB_PATH, table_name="swim_results"):
         dict[str, pd.DataFrame]: Dictionary of query titles to results.
     """
     queries = {
-        "Top 10 fastest swims": f"""
-            SELECT first_name, last_name, sex, final_time
+        "Top 10 fastest men's swims": f"""
+            SELECT first_name, last_name, final_time
             FROM {table_name}
-            WHERE final_time IS NOT NULL
+            WHERE sex = 'M' AND final_time IS NOT NULL
+            ORDER BY final_time ASC
+            LIMIT 10
+        """,
+        "Top 10 fastest women's swims": f"""
+            SELECT first_name, last_name, final_time
+            FROM {table_name}
+            WHERE sex = 'F' AND final_time IS NOT NULL
             ORDER BY final_time ASC
             LIMIT 10
         """,
