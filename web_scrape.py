@@ -172,7 +172,7 @@ class OmegaScraper:
         for row in event_rows:
             try:
                 text = row.find_element(By.CSS_SELECTOR, "p.round").text.upper()
-                if "FREESTYLE" in text and "400" in text:
+                if "FREESTYLE" in text and "400" in text and "25" not in text:
                     links = row.find_elements(By.CSS_SELECTOR, "p.two a[href]")
                     if len(links) >= 2:
                         pdf_url = links[1].get_attribute("href")
@@ -197,24 +197,58 @@ class OmegaScraper:
 
 # ---------------------------------------------------- RUN ----------------------------------------------------
 def get_csv(start, end):
-    #initializes omegascraper class
+    """
+    Scrape OmegaTiming competition pages and save 400m freestyle
+    PDF links to the omega_pdfs.csv file.
+    """
+
     scraper = OmegaScraper()
-    ensure_csv() # Using your existing helper
-    
+    ensure_csv()
+
+    print("Saving results to:", OUT_CSV)
+
     try:
         scraper.driver.get(url)
-        for year in range(start, end + 1): #iterate through years, inclusive
-            scraper.select_year(year)
-            competitions = scraper.get_comp_links(year)
-            print(f"Year {year}: Found {len(competitions)} comps.")
 
+        for year in range(start, end + 1):
+            competitions = []
+
+            # Retry year selection if needed
+            for attempt in range(2):
+                try:
+                    scraper.driver.get(url)
+                    scraper.select_year(year)
+                    competitions = scraper.get_comp_links(year)
+
+                    if competitions:
+                        break
+                    else:
+                        print(f"Year {year}: no comps found on attempt {attempt+1}")
+
+                except Exception as e:
+                    print(f"Year {year}: attempt {attempt+1} failed: {e}")
+
+            print(f"Year {year}: Found {len(competitions)} competitions.")
+
+            saved = 0
+
+            # Loop through competitions
             for name, link in competitions:
+                name_upper = name.upper()
+                if "25M" in name_upper or "SHORT COURSE" in name_upper:
+                    continue
                 try:
                     m, w = scraper.get_pdfs(link)
+
                     if m or w:
                         append_row(year, name, m, w)
+                        saved += 1
                         print(f"  [SAVED] {name}")
+
                 except Exception as e:
                     print(f"  [ERROR] {name}: {e}")
+
+            print(f"Year {year} summary: {saved} races saved\n")
+
     finally:
-        scraper.driver.quit() #closes the process out at the end
+        scraper.driver.quit()

@@ -139,3 +139,24 @@ def plot_split_correlations(df_prepared):
 
     plt.tight_layout()
     plt.show()
+
+
+def plot_model_comparison(results_df):
+    """Plot MAE for each regression model."""
+    required_cols = {"model_name", "mae"}
+    if not required_cols.issubset(results_df.columns):
+        raise ValueError("results_df must contain 'model_name' and 'mae' columns.")
+
+    fig, ax = plt.subplots(figsize=(8, 4))
+    ax.bar(results_df["model_name"], results_df["mae"])
+
+    for i, v in enumerate(results_df["mae"]):
+        ax.text(i, v + 0.01, f"{v:.3f}s", ha="center")
+
+    ax.set_ylabel("MAE (seconds)")
+    ax.set_xlabel("Model")
+    ax.set_title("Model comparison for final time prediction")
+    ax.grid(axis="y")
+
+    plt.tight_layout()
+    plt.show()

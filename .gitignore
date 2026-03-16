@@ -1,8 +1,10 @@
 .ipynb_checkpoints/
 .virtual_documents/
 __pycache__/
-data/raw_pdfs/
-# Generated data
-data/omega_pdfs.csv
-pdfs/
 
+data/raw_pdfs/
+
+# Ignore generated DB but keep CSV datasets
+data/*.db
+
+pdfs/

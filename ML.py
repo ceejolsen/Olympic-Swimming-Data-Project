@@ -5,6 +5,13 @@ from sklearn.ensemble import RandomForestRegressor
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import mean_absolute_error
 from pdf import time_to_seconds #was created in another file, actually dned up being used here
+from sklearn.linear_model import LinearRegression
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import PolynomialFeatures
+from sklearn.metrics import mean_squared_error, r2_score
+from sklearn.model_selection import cross_val_score
+from sklearn.ensemble import GradientBoostingRegressor
+
 
 
 FEATURE_SPLITS = ["split_50m", "split_100m", "split_150m", "split_200m", "split_250m"]
@@ -86,7 +93,26 @@ def prepare_data(men_input, women_input) -> pd.DataFrame:
     )
     df = df.dropna(subset=FEATURE_COLS)
     return df
+    
 
+def evaluate_model(model, X_train, X_test, y_train, y_test) -> dict:
+    """
+    Fit a model and return common regression metrics.
+    """
+    model.fit(X_train, y_train)
+    preds = model.predict(X_test)
+
+    mae = mean_absolute_error(y_test, preds)
+    rmse = np.sqrt(mean_squared_error(y_test, preds))
+    r2 = r2_score(y_test, preds)
+
+    return {
+        "model": model,
+        "mae": round(mae, 3),
+        "rmse": round(rmse, 3),
+        "r2": round(r2, 4),
+    }
+    
 
 def train_model(men_input, women_input) -> tuple[RandomForestRegressor, float, pd.Series]:
     """
@@ -123,7 +149,7 @@ def train_model(men_input, women_input) -> tuple[RandomForestRegressor, float, p
     return model, mae, importances
 
 
-def predict(model: RandomForestRegressor, splits) -> float:
+def predict(model, splits) -> float:
     """
     Predict final_time for a single swimmer.
 
@@ -162,7 +188,7 @@ def predict(model: RandomForestRegressor, splits) -> float:
     return round(float(model.predict(X)[0]), 2)
 
 
-def predict_batch(model: RandomForestRegressor, df: pd.DataFrame) -> pd.DataFrame:
+def predict_batch(model, df: pd.DataFrame) -> pd.DataFrame:
     """
     Run predictions across every row of a prepared DataFrame and attach residuals.
     Use this for pacing analysis across the full dataset.
@@ -230,3 +256,88 @@ def progressive_accuracy_experiment(men_input, women_input) -> pd.DataFrame:
         print(f"  Up to {splits[-1]:>15s} → MAE = {mae:.3f}s")
 
     return pd.DataFrame(results)
+
+def compare_models(men_input, women_input, poly_degree=2) -> pd.DataFrame:
+    """
+    Compare Linear Regression, Polynomial Regression, and Random Forest
+    on the same train/test split.
+    """
+    df = prepare_data(men_input, women_input)
+
+    X = df[FEATURE_COLS]
+    y = df["final_time"]
+
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y, test_size=0.2, random_state=42
+    )
+
+    models = {
+        "Linear Regression": LinearRegression(),
+        "Polynomial Regression": Pipeline([
+            ("poly", PolynomialFeatures(degree=poly_degree, include_bias=False)),
+            ("linear", LinearRegression())
+        ]),
+        "Random Forest": RandomForestRegressor(n_estimators=100, random_state=42),
+    }
+
+    results = []
+
+    for name, model in models.items():
+        metrics = evaluate_model(model, X_train, X_test, y_train, y_test)
+        results.append({
+            "model_name": name,
+            "mae": metrics["mae"],
+            "rmse": metrics["rmse"],
+            "r2": metrics["r2"],
+        })
+        print(
+            f"{name:>22s} | MAE: {metrics['mae']:.3f}s | "
+            f"RMSE: {metrics['rmse']:.3f}s | R²: {metrics['r2']:.4f}"
+        )
+
+    return pd.DataFrame(results).sort_values("mae").reset_index(drop=True)
+
+
+def compare_models_cv(men_input, women_input, poly_degree=2, cv=5) -> pd.DataFrame:
+    """
+    Compare models using k-fold cross-validation instead of one train/test split.
+    """
+
+    df = prepare_data(men_input, women_input)
+
+    X = df[FEATURE_COLS]
+    y = df["final_time"]
+
+    models = {
+        "Linear Regression": LinearRegression(),
+        "Polynomial Regression": Pipeline([
+            ("poly", PolynomialFeatures(degree=poly_degree, include_bias=False)),
+            ("linear", LinearRegression())
+        ]),
+        "Random Forest": RandomForestRegressor(n_estimators=100, random_state=42),
+        "Gradient Boosting": GradientBoostingRegressor(random_state=42),
+    }
+
+    results = []
+
+    for name, model in models.items():
+
+        # sklearn returns negative MAE for scoring
+        scores = cross_val_score(
+            model,
+            X,
+            y,
+            scoring="neg_mean_absolute_error",
+            cv=cv
+        )
+
+        mae = -scores.mean()
+
+        results.append({
+            "model_name": name,
+            "mae": round(mae, 3),
+        })
+
+        print(f"{name:>20s} | CV MAE: {mae:.3f}s")
+
+    return pd.DataFrame(results).sort_values("mae").reset_index(drop=True)
