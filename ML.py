@@ -66,14 +66,14 @@ def prepare_data(men_input, women_input) -> pd.DataFrame:
     Only requires the 5 feature splits + final_time to be non-null
     (split_300m / split_350m are often missing and are NOT required).
 
-    Parameters
-    ----------
-    men_input / women_input : str (CSV path) or pd.DataFrame
 
-    Returns
-    -------
-    pd.DataFrame ready for modelling, with times in seconds and
-    interval features added.
+    Keyword arguments:
+        Parameters
+            men_input / women_input : str (CSV path) or pd.DataFrame
+
+        Return arguments:
+            pd.DataFrame ready for modelling, with times in seconds and
+            interval features added.
     """
     df = pd.concat([
         pd.read_csv(_normalize_input(men_input)),
@@ -119,15 +119,14 @@ def train_model(men_input, women_input) -> tuple[RandomForestRegressor, float, p
     Prepare data and train a RandomForestRegressor predicting final_time
     from the first 250m of splits.
 
-    Parameters
-    ----------
-    men_input / women_input : str (CSV path) or pd.DataFrame
-
-    Returns
-    -------
-    model        : fitted RandomForestRegressor
-    mae          : mean absolute error on held-out test set (seconds)
-    importances  : pd.Series of feature importances, sorted descending
+    Keyword arguments:
+        Parameters
+            men_input / women_input: str (CSV path) or pd.DataFrame
+    
+        Return arguments:
+            model: fitted RandomForestRegressor
+            mae: mean absolute error on held-out test set (seconds)
+            importances: pd.Series of feature importances, sorted descending
     """
     df = prepare_data(men_input, women_input)
 
@@ -153,17 +152,16 @@ def predict(model, splits) -> float:
     """
     Predict final_time for a single swimmer.
 
-    Parameters
-    ----------
-    model  : fitted model from train_model()
-    splits : dict or pd.Series with keys:
-               split_50m, split_100m, split_150m, split_200m, split_250m,
-               reaction_time — all as floats (seconds).
-             Strings like '1:52.53' are auto-converted.
-
-    Returns
-    -------
-    Predicted final time in seconds (float).
+    Keyword arguments:
+        Parameters
+        model: fitted model from train_model()
+        splits: dict or pd.Series with keys:
+                   split_50m, split_100m, split_150m, split_200m, split_250m,
+                   reaction_time — all as floats (seconds).
+                 Strings like '1:52.53' are auto-converted.
+    
+        Return arguments:
+            Predicted final time in seconds (float).
 
     Example
     -------
@@ -193,18 +191,15 @@ def predict_batch(model, df: pd.DataFrame) -> pd.DataFrame:
     Run predictions across every row of a prepared DataFrame and attach residuals.
     Use this for pacing analysis across the full dataset.
 
-    Parameters
-    ----------
-    model : fitted model from train_model()
-    df    : DataFrame from prepare_data() (times in seconds, intervals added)
-
-    Returns
-    -------
-    df copy with two new columns:
-        predicted_time : model's predicted final time (seconds)
-        residual       : predicted - actual
-                         positive = model over-predicted = swimmer finished stronger than expected
-                         negative = model under-predicted = swimmer faded worse than expected
+    Keyword arguments:
+        Parameters
+            model : fitted model from train_model()
+            df    : DataFrame from prepare_data() (times in seconds, intervals added)
+    
+        Returns
+            df copy with two new columns:
+                predicted_time: model's predicted final time (seconds)
+                residual: predicted - actual
     """
     out = df.copy()
     out["predicted_time"] = model.predict(out[FEATURE_COLS])
@@ -220,16 +215,15 @@ def progressive_accuracy_experiment(men_input, women_input) -> pd.DataFrame:
     This answers: "At what point does the model become accurate?"
     The result is intended to be plotted (splits_used vs mae).
 
-    Parameters
-    ----------
-    men_input / women_input : str (CSV path) or pd.DataFrame
-
-    Returns
-    -------
-    pd.DataFrame with columns:
-        splits_used : label of the furthest split used (e.g. 'split_100m')
-        n_features  : total number of features at that stage
-        mae         : mean absolute error in seconds
+    Keyword arguments:
+        Parameters
+        men_input / women_input : str (CSV path) or pd.DataFrame
+    
+        Return arguments:
+        pd.DataFrame with columns:
+            splits_used: label of the furthest split used (e.g. 'split_100m')
+            n_features: total number of features at that stage
+            mae: mean absolute error in seconds
     """
     df = prepare_data(men_input, women_input)
     y  = df["final_time"]
