@@ -55,7 +55,7 @@ NOISE_PATTERNS = [re.compile(p, re.IGNORECASE) for p in _NOISE_RES]
 
 def _load_pdf_bytes(source: str) -> bytes:
     """Load PDF bytes from a local file path or an HTTP/HTTPS URL.
-    Arguments:
+    Keyword arguments:
         Parameters:
             source: link to the pdf
         Return arguments: 
@@ -122,10 +122,12 @@ def split_name(raw: str) -> tuple:
     """
     Helper function to split a 'LAST Firstname' string into (last_name, first_name).
 
-    Return argments:
-    Tuple:
-        (Last name, 
-        First name)
+    Keyword arguments:
+        Parameters
+        Return argments:
+            Tuple:
+                (Last name, 
+                First name)
     """
     tokens = raw.split()
     last_parts, first_parts = [], []
@@ -148,6 +150,9 @@ def split_into_heat_sections(text: str) -> list:
 
     Keyword argument:
         Paremeters:
+
+        Return arguments:
+            
     """
     matches = list(HEAT_HEADER.finditer(text))
     if not matches:
